@@ -2,9 +2,9 @@ package main
 
 import (
 	"os"
-	"testing"
 	"os/exec"
 	"path/filepath"
+	"testing"
 )
 
 func TestGetRepoRoot(t *testing.T) {
@@ -60,4 +60,3 @@ func TestGetRepoRoot(t *testing.T) {
 		})
 	}
 }
-

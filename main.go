@@ -5,16 +5,17 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
-	"bufio"
-	"net/http"
 	"io"
-	"github.com/go-git/go-git/v5"
-	"github.com/urfave/cli/v2"
+	"net/http"
 	"os"
 	"regexp"
+
+	"github.com/go-git/go-git/v5"
 	"github.com/hashicorp/go-envparse"
+	"github.com/urfave/cli/v2"
 )
 
 type ParsedRes map[string]interface{}
@@ -24,6 +25,7 @@ func callGetApi() (ParsedRes, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	trellorcPath := repoRoot + "/.trellorc"
 	file, err := os.Open(trellorcPath)
 	if err != nil {
@@ -85,7 +87,7 @@ func getCurrentTaskName() string {
 	return branchName[len(prefix):]
 }
 
-func showCard(c *cli.Context) error {
+func showCard(_ *cli.Context) error {
 	res, err := callGetApi()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
