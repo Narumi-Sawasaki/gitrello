@@ -7,13 +7,13 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/hashicorp/go-envparse"
 	"github.com/urfave/cli/v2"
 )
@@ -49,42 +49,35 @@ func callGetApi() (ParsedRes, error) {
 	return data, nil
 }
 
-// func getRepoRoot() (string, error) {
-// 	r, err := git.PlainOpen(".")
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	w, err := r.Worktree()
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	return w.Filesystem.Root(), nil
-// }
-
-func getCurrentBranchName() string {
-	r, err := git.PlainOpen(".")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	ref, err := r.Head()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	return ref.Name().Short()
+type QueryParams map[string]string
+type Config map[string]string
+type ApiClient interface {
+	Get(url string, queryParams QueryParams) (ParsedRes, error)
+}
+type ApiClientImpl struct {
+	Config Config
 }
 
-func getCurrentTaskName() string {
-	branchName := getCurrentBranchName()
+func (client *ApiClientImpl) Get(url string, queryParams QueryParams) (ParsedRes, error) {
+	// queryParamsを組み立てる
+	url := fmt.Sprintf("%s?query=board:%s%%2029&key=%s&token=%s", env["BOARD_ID"], env["API_KEY"], env["API_TOKEN"])
+	resp, _ := http.Get(url)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 
-	prefix := "task/"
-	if len(branchName) < len(prefix) || branchName[:len(prefix)] != prefix {
-		fmt.Fprintln(os.Stderr, "ブランチ名が不正です")
-		os.Exit(1)
+	var data ParsedRes
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil, err
 	}
 
-	return branchName[len(prefix):]
+	return data, nil
+
+}
+
+func fetchCards(client ApiClient, keyword string) (ParsedRes, error) {
+	return client.Get("https://api.trello.com/1/search", QueryParams{
+		"key": keyword,
+	})
 }
 
 func showCard(_ *cli.Context) error {
@@ -92,16 +85,21 @@ func showCard(_ *cli.Context) error {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+
+	currentTaskName, err := getCurrentTaskName()
+	if err != nil {
+		return err
+	}
 	for _, v := range res["cards"].([]interface{}) {
 		card := v.(map[string]interface{})
 
-		urlRegex := fmt.Sprintf("^(https://trello.com/c/.*/%s-).*", getCurrentTaskName())
+		urlRegex := fmt.Sprintf("^(https://trello.com/c/.*/%s-).*", currentTaskName)
 		if matched, _ := regexp.MatchString(urlRegex, card["url"].(string)); matched {
-			fmt.Println(card["name"])
+			fmt.Println(fmt.Sprintf("%s\n%s", card["name"], card["url"]))
+			return nil
 		} else {
-			fmt.Println("not matched")
+			return errors.New("Not matched")
 		}
-
 	}
 	return nil
 }
