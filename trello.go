@@ -9,7 +9,9 @@ import (
 )
 
 var getCurrentBranchName = func() (string, error) {
-	r, err := git.PlainOpen(".")
+	r, err := git.PlainOpenWithOptions(".",  &git.PlainOpenOptions{
+		DetectDotGit: true,
+	})
 	if err != nil {
 		return "", err
 	}
