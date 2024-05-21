@@ -14,6 +14,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"os/exec"
 
 	"github.com/hashicorp/go-envparse"
 	"github.com/urfave/cli/v2"
@@ -67,10 +68,10 @@ func (client *ApiClientImpl) Get(url string, queryParams QueryParams) (ParsedRes
 
 func fetchCards(client ApiClient, config Config, keyword string) (ParsedRes, error) {
 	return client.Get("https://api.trello.com/1/search", QueryParams{
-		"query": fmt.Sprintf("board:%s%%20%s", config["BOARD_ID"], keyword),
-		"key":   config["API_KEY"],
-		"token": config["API_TOKEN"],
-	})
+	"query": fmt.Sprintf("board:%s%%20%s", config["BOARD_ID"], keyword),
+	"key":   config["API_KEY"],
+	"token": config["API_TOKEN"],
+})
 }
 
 func showCard(_ *cli.Context) error {
@@ -101,16 +102,53 @@ func showCard(_ *cli.Context) error {
 
 	for _, v := range res["cards"].([]interface{}) {
 		card := v.(map[string]interface{})
-
 		urlRegex := fmt.Sprintf("^(https://trello.com/c/.*/%s-).*", currentTaskName)
 		if matched, _ := regexp.MatchString(urlRegex, card["url"].(string)); matched {
 			fmt.Println(fmt.Sprintf("%s\n%s", card["name"], card["url"]))
 			return nil
-		} else {
-			return errors.New("Not matched")
 		}
 	}
-	return nil
+	return errors.New("Not matched")
+}
+
+func openCard(_ *cli.Context) error {
+	repoRoot, err := getRepoRoot()
+	if err != nil {
+		return err
+	}
+	trellorcPath := repoRoot + "/.trellorc"
+	file, err := os.Open(trellorcPath)
+	if err != nil {
+		return err
+	}
+	env, err := envparse.Parse(bufio.NewReader(file))
+	if err != nil {
+		return err
+	}
+
+	currentTaskName, err := getCurrentTaskName()
+	if err != nil {
+		return err
+	}
+
+	client := &ApiClientImpl{}
+	res, err := fetchCards(client, Config(env), currentTaskName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+
+	for _, v := range res["cards"].([]interface{}) {
+		card := v.(map[string]interface{})
+		urlRegex := fmt.Sprintf("^(https://trello.com/c/.*/%s-).*", currentTaskName)
+		if matched, _ := regexp.MatchString(urlRegex, card["url"].(string)); matched {
+			err := exec.Command("open", card["url"].(string)).Start()
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			return nil
+		}
+	}
+	return errors.New("Not matched")
 }
 
 func main() {
@@ -121,6 +159,12 @@ func main() {
 				Name:    "c",
 				Aliases: []string{"card"},
 				Action:  showCard,
+				Subcommands: []*cli.Command{
+					{
+						Name: "open",
+						Action: openCard,
+					},
+				},
 			},
 		},
 	}
